@@ -22,24 +22,34 @@ func QueryModelSize(model string) (uint64, error) {
 	return usize, nil
 }
 
-// DownloadModel 下载模型，返回下载命令
-func DownloadModel(task *ModelDownloadTask) error {
+// DownloadModel 下载模型
+func DownloadModel(task *ModelDownloadTask) (*ModelDownloadTask, error) {
 	// modelscope download --model Tencent-Hunyuan/Hy3 --local_dir
 	err := os.MkdirAll(task.SavePath, 0644)
 	if err != nil {
-		return fmt.Errorf("error: create directory failed: %v", err)
+		return task, fmt.Errorf("error: create directory failed: %v", err)
 	}
 	cmdStr, err := task.DownLoadCmd()
 	if err != nil {
-		return fmt.Errorf("error: generate download command failed: %v", err)
+		return task, fmt.Errorf("error: generate download command failed: %v", err)
 	}
 	cmd := exec.Command("bash", "-c", cmdStr)
 	err = cmd.Start()
 	if err != nil {
-		return fmt.Errorf("error: start command failed: %v", err)
+		return task, fmt.Errorf("error: start command failed: %v", err)
 	}
 	pid := cmd.Process.Pid
 	task.DownloadPid = &pid
 	task.Status = TaskStatusDownloading
-	return cmd.Wait()
+
+	go func(cmd *exec.Cmd, task *ModelDownloadTask) {
+		err := cmd.Wait()
+		if err != nil {
+			task.Status = TaskStatusFailed
+		} else {
+			task.Status = TaskStatusCompleted
+		}
+		task.DownloadPid = nil
+	}(cmd, task)
+	return task, nil
 }

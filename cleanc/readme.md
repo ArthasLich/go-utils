@@ -28,3 +28,6 @@ Usage of ./cleanc:
 cleanc -d -c 5d --idle会打印5天前创建的，现在退出或空闲的容器，但不会删除
 ```
 
+## todo
+
+- --dry-run显示会删除的镜像

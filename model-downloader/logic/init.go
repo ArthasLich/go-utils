@@ -29,22 +29,20 @@ func Init(dbfile string, savePath string, pythonCmd string, port uint16) error {
 		return err
 	}
 	GlobalDB = db
-
 	PythonCmd = pythonCmd
-
-	web := gin.Default()
-	InitRoute(web)
-
+	ListenPort = port
 	return nil
 }
 
 // Run 运行方法
 func Run() error {
 	// 启动web服务
+	web := gin.Default()
+	InitRoute(web)
 
 	// 启动磁盘容量检查
-
+	go Daemon()
 	// 启动下载任务处理
 
-	return nil
+	return web.Run(fmt.Sprintf(":%d", ListenPort))
 }

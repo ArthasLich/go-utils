@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/spf13/pflag"
 )
@@ -147,36 +148,58 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: get container info failed: %v", err)
 	}
-
-	if before != nil {
-		ctod := filterContainer(ci, before, cleanIdel)
-		if *dryRun {
-			PrintContainers(ctod)
-			return
-		}
-
-		for k, v := range ctod {
-			if v.Status == container.StateRunning {
-				cli.ContainerKill(context.Background(), k, client.ContainerKillOptions{})
-			}
-			cli.ContainerRemove(context.Background(), k, client.ContainerRemoveOptions{})
-			fmt.Printf("deleted %s %s \n", v.ID[:12], v.Name)
-		}
+	ii, err := GetImageInfo(cli)
+	if err != nil {
+		log.Fatalf("error: get image info failed: %v", err)
 	}
 
-	if ibefore != nil {
-		imgs, err := cli.ImageList(context.Background(), client.ImageListOptions{All: true})
-		if err != nil {
-			log.Fatalf("error: list docker image failed: %v", err)
+	if *dryRun {
+		var ctod map[string]*ContainerInfo
+		var itod map[string]*image.Summary
+		if before != nil {
+			ctod = filterContainer(ci, before, cleanIdel)
 		}
-		now := time.Now()
-		t := now.Add(ibefore.ToDuration() * -1)
-		for _, v := range imgs.Items {
-			if v.Containers > 0 {
-				continue
+		if ibefore != nil {
+			itod = filterImage(ii, ci, ctod, ibefore)
+		}
+		if ctod != nil {
+			PrintContainers(ctod)
+		}
+		if itod != nil {
+			PrintImages(itod)
+		}
+	} else {
+		if before != nil {
+			ctod := filterContainer(ci, before, cleanIdel)
+			for k, v := range ctod {
+				if v.Status == container.StateRunning {
+					cli.ContainerKill(context.Background(), k, client.ContainerKillOptions{})
+				}
+				cli.ContainerRemove(context.Background(), k, client.ContainerRemoveOptions{})
+				fmt.Printf("deleted %s %s \n", v.ID[:12], v.Name)
 			}
-			if time.Unix(v.Created, 0).Before(t) {
-				cli.ImageRemove(context.Background(), v.ID, client.ImageRemoveOptions{Force: false})
+		}
+		if ibefore != nil {
+			imgs, err := cli.ImageList(context.Background(), client.ImageListOptions{All: true})
+			if err != nil {
+				log.Fatalf("error: list docker image failed: %v", err)
+			}
+			now := time.Now()
+			t := now.Add(ibefore.ToDuration() * -1)
+			for _, v := range imgs.Items {
+				if v.Containers > 0 {
+					continue
+				}
+				if time.Unix(v.Created, 0).Before(t) {
+					_, err := cli.ImageRemove(context.Background(), v.ID, client.ImageRemoveOptions{Force: false})
+					if err == nil {
+						if len(v.RepoTags) > 0 {
+							fmt.Printf("deleted %s %s \n", v.ID[7:19], v.RepoTags[0])
+						} else {
+							fmt.Printf("deleted %s \n", v.ID[7:19])
+						}
+					}
+				}
 			}
 		}
 	}
@@ -207,6 +230,43 @@ func ContainerName(s []string) string {
 		return ""
 	}
 	return strings.TrimPrefix(s[0], "/")
+}
+
+func GetImageInfo(cli *client.Client) (map[string]*image.Summary, error) {
+	imgs, err := cli.ImageList(context.Background(), client.ImageListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*image.Summary)
+	for _, v := range imgs.Items {
+		result[v.ID] = &v
+	}
+	return result, nil
+}
+
+func filterImage(ii map[string]*image.Summary, ci map[string]*ContainerInfo, ctod map[string]*ContainerInfo, before *DockerDuration) map[string]*image.Summary {
+	result := make(map[string]*image.Summary)
+	now := time.Now()
+	b := now.Add(-1 * before.ToDuration())
+
+	imgUsed := make(map[string]bool)
+	for k, v := range ci {
+		_, have := ctod[k]
+		if have {
+			continue
+		}
+		imgUsed[v.ImageID] = true
+	}
+	for k, v := range ii {
+		if time.Unix(v.Created, 0).Before(b) {
+			a, b := imgUsed[v.ID]
+			if a && b {
+				continue
+			}
+			result[k] = v
+		}
+	}
+	return result
 }
 
 func GetContainerInfo(cli *client.Client) (map[string]*ContainerInfo, error) {
@@ -280,6 +340,16 @@ func parseStatus(str string) (*DockerDuration, error) {
 	return dd, nil
 }
 
+
+
+/*
+	空占容器的命令
+	/bin/sh
+	/bin/bash
+	sleep infinity
+	tail -f /dev/null
+*/
+
 // isIdleCmd 判断是否为空占命令
 func isIdleCmd(str string) bool {
 	if strings.HasSuffix(str, "bash") || str == "sh" || strings.HasPrefix(str, "sleep") {
@@ -326,6 +396,7 @@ func PrintContainers(m map[string]*ContainerInfo) {
 	/*
 		ContainerID Name Create Status
 	*/
+	fmt.Println("== container can be deleted")
 	nameLen := 1
 	l := make([]*ContainerInfo, 0, len(m))
 	for _, v := range m {
@@ -346,6 +417,18 @@ func PrintContainers(m map[string]*ContainerInfo) {
 			fmt.Printf("%s  %s %s %s %s\n", v.ID[:12], name, v.CreateTime.Format(time.DateTime), v.Status, v.StatusTime.String())
 		} else {
 			fmt.Printf("%s  %s %s\n", v.ID[:12], name, v.CreateTime.Format(time.DateTime))
+		}
+	}
+}
+
+func PrintImages(m map[string]*image.Summary) {
+	fmt.Println("== image can be deleted")
+	fmt.Printf("ImageID       RepoTags\n")
+	for _, v := range m {
+		if len(v.RepoTags) == 0 {
+			fmt.Printf("%s  - \n", v.ID[7:19])
+		} else {
+			fmt.Printf("%s  %s \n", v.ID[7:19], v.RepoTags[0])
 		}
 	}
 }

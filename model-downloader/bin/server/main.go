@@ -3,6 +3,7 @@ package main
 import (
 	"go-utils/model-downloader/logic"
 	"log"
+	"path/filepath"
 
 	"github.com/spf13/pflag"
 )
@@ -18,13 +19,23 @@ var (
 func main() {
 	pflag.Parse()
 	if *flagHelp {
+		pflag.Usage()
 		return
 	}
 
 	if len(*flagSavePath) == 0 {
 		log.Fatalf("save path must be set")
 	}
-
-	logic.Init(*flagDB, *flagSavePath, *flagPython, *flagPort)
+	// 获取保存路径的绝对路径
+	savePath, err := filepath.Abs(*flagSavePath)
+	if err != nil {
+		log.Fatalf("get absolute path of save path failed: %v", err)
+	}
+	savePath, err = filepath.EvalSymlinks(savePath)
+	if err != nil {
+		log.Fatalf("evaluate symlinks of save path failed: %v", err)
+	}
+	
+	logic.Init(*flagDB, savePath, *flagPython, *flagPort)
 	logic.Run()
 }

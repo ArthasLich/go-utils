@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 )
 
@@ -164,6 +165,11 @@ func TestPrintImages(t *testing.T) {
 
 	}
 	for _, v := range imgs.Items {
-		t.Logf("id: %s, userd container: %d,create: %v repotag: %v\n", v.ID[:20], v.Containers, time.Unix(v.Created, 0).Format(time.DateTime), v.RepoTags)
+		t.Logf("id: %s, userd container: %d,create: %v repotag: %v\n", v.ID[7:19], v.Containers, time.Unix(v.Created, 0).Format(time.DateTime), v.RepoTags)
 	}
+	imgMap := make(map[string]*image.Summary)
+	for _, v := range imgs.Items {
+		imgMap[v.ID] = &v
+	}
+	PrintImages(imgMap)
 }

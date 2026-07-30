@@ -7,7 +7,7 @@ func TestDownloadModel(t *testing.T) {
 		ModelName: "test",
 		SavePath:  "test",
 	}
-	err := DownloadModel(task)
+	task, err := DownloadModel(task)
 	if err != nil {
 		t.Error(err)
 	}

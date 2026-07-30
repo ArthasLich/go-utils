@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -24,19 +25,28 @@ const (
 	TaskStatusFailed      TaskStatus = "failed"
 )
 
-// ModelDownloadTask 下载任务
-type ModelDownloadTask struct {
-	gorm.Model                  // 基础字段
-	ModelName        string     // 模型名称
-	User             string     // 下载用户
-	SavePath         string     // 模型下载路径
-	Status           TaskStatus // 状态
-	ModelSize        uint64     // 模型大小
-	DownloadedSize   *int64     `gorm:"-"` // 已下载的大小
-	DownloadPid      *int       `gorm:"-"` // 下载进程的pid
-	DownloadProgress *float64   `gorm:"-"` // 下载进度，百分比
+type Model struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
+// ModelDownloadTask 下载任务
+type ModelDownloadTask struct {
+	Model                       // 基础字段
+	ModelName        string     `json:"model_name"`                 // 模型名称
+	User             string     `json:"user"`                       // 下载用户
+	SavePath         string     `json:"save_path"`                  // 模型下载路径
+	Status           TaskStatus `json:"status"`                     // 状态
+	ModelSize        uint64     `json:"model_size"`                 // 模型大小
+	DefaultPath      bool       `json:"default_path"`               // 是否使用了默认路径
+	DownloadedSize   *int64     `gorm:"-" json:"downloaded_size"`   // 已下载的大小
+	DownloadPid      *int       `gorm:"-" json:"download_pid"`      // 下载进程的pid
+	DownloadProgress *float64   `gorm:"-" json:"download_progress"` // 下载进度，百分比
+}
+
+// NewTask 创建下载任务，如果查询模型大小失败则返回错误，如果savePath为空则使用默认路径
 func NewTask(modelName string, user string, savePath string) (*ModelDownloadTask, error) {
 	result := ModelDownloadTask{
 		ModelName: modelName,
@@ -49,6 +59,13 @@ func NewTask(modelName string, user string, savePath string) (*ModelDownloadTask
 		return nil, err
 	}
 	result.ModelSize = size
+	if savePath == "" {
+		result.SavePath = filepath.Join(SavePath, result.ModelShortName())
+		result.DefaultPath = true
+	} else {
+		// 获取保存路径的绝对路径
+		result.SavePath = savePath
+	}
 	return &result, nil
 }
 
@@ -67,7 +84,7 @@ func (mdt *ModelDownloadTask) LogFile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s.log", OutputDir, strings.ReplaceAll(mdt.ModelName, "/", "_")), nil
+	return fmt.Sprintf("%s/%s.log", OutputDir, mdt.ModelShortName()), nil
 }
 
 // CheckDiskSize 检查磁盘空间是否满足需求
@@ -84,6 +101,11 @@ func (mdt *ModelDownloadTask) CheckDiskSize() (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func (mdt *ModelDownloadTask) ModelShortName() string {
+	items := strings.Split(mdt.ModelName, "/")
+	return items[len(items)-1]
 }
 
 func (d *dao) QueryTask(user *string, status *TaskStatus, model *string) ([]ModelDownloadTask, error) {
