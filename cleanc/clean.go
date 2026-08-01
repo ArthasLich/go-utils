@@ -169,6 +169,7 @@ func main() {
 			PrintImages(itod)
 		}
 	} else {
+		// 删除容器
 		if before != nil {
 			ctod := filterContainer(ci, before, cleanIdel)
 			for k, v := range ctod {
@@ -179,6 +180,7 @@ func main() {
 				fmt.Printf("deleted %s %s \n", v.ID[:12], v.Name)
 			}
 		}
+		// 删除镜像
 		if ibefore != nil {
 			imgs, err := cli.ImageList(context.Background(), client.ImageListOptions{All: true})
 			if err != nil {
@@ -201,6 +203,8 @@ func main() {
 					}
 				}
 			}
+			// 在最后删除悬空镜像
+			cli.ImagePrune(context.Background(), client.ImagePruneOptions{})
 		}
 	}
 }
@@ -340,8 +344,6 @@ func parseStatus(str string) (*DockerDuration, error) {
 	return dd, nil
 }
 
-
-
 /*
 	空占容器的命令
 	/bin/sh
@@ -356,6 +358,10 @@ func isIdleCmd(str string) bool {
 		return true
 	}
 	if strings.HasSuffix(str, "/bin/bash") || strings.HasSuffix(str, "/bin/sh") {
+		return true
+	}
+	switch str {
+	case "sleep infinity", "tail -f /dev/null":
 		return true
 	}
 	return false

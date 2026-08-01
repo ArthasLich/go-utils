@@ -30,7 +30,7 @@ func TestSaveOrUpdateTask(t *testing.T) {
 	task := &ModelDownloadTask{
 		ModelName: "deepseek-r1",
 		SavePath:  "/public/llm-models",
-		Status:    TaskStatusPending,
+		Status:    TaskStatusCreating,
 		User:      "liming6",
 		ModelSize: 123456789,
 	}

@@ -40,9 +40,17 @@ func Run() error {
 	web := gin.Default()
 	InitRoute(web)
 
-	// 启动磁盘容量检查
+	// 启动后台任务
 	go Daemon()
+	
 	// 启动下载任务处理
+	go InitDownload()
 
 	return web.Run(fmt.Sprintf(":%d", ListenPort))
+}
+
+
+// InitDownload 初始化下载任务
+func InitDownload() {
+
 }

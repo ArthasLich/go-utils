@@ -16,16 +16,58 @@ func InitRoute(engine *gin.Engine) {
 	engine.POST("/api/task/query", GinTaskQuery)
 	// 取消任务
 	engine.POST("/api/task/cancel", GinTaskCancel)
-	// 暂停任务	
+	// 暂停任务
 	engine.POST("/api/task/stop", GinTaskStop)
 	// 开始任务
 	engine.POST("/api/task/start", GinTaskStart)
 }
 
 func GinTaskStop(c *gin.Context) {
+	var query struct {
+		TaskID uint `json:"task_id"` // 任务ID
+	}
+	if err := c.ShouldBindJSON(&query); err != nil {
+		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: parse body failed: %v", err), Data: nil})
+		return
+	}
+	tmp, have := TaskMap.Load(query.TaskID)
+	if !have {
+		c.JSON(http.StatusOK, ApiResult[any]{Code: 200, Msg: "task not found", Data: nil})
+		return
+	}
+	task := tmp.(*ModelDownloadTask)
+	if task.Status != TaskStatusDownloading || task.DownloadProcess == nil {
+		c.JSON(http.StatusBadRequest, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task is not downloading", Data: task})
+		return
+	}
+	err := task.StopDownload()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		return
+	}
+	err = task.UpdateDownloadProcess()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		return
+	}
+	// 落库
+	task, err = DAO.SaveOrUpdateTask(task)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		return
+	}
+	TaskMap.Store(task.ID, task)
+	c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "ok", Data: task})
 }
 
 func GinTaskStart(c *gin.Context) {
+	var query struct {
+		TaskID uint `json:"task_id"` // 任务ID
+	}
+	if err := c.ShouldBindJSON(&query); err != nil {
+		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: parse body failed: %v", err), Data: nil})
+		return
+	}
 }
 
 func GinTaskCancel(c *gin.Context) {
@@ -50,6 +92,13 @@ func GinTaskCommit(c *gin.Context) {
 	model, err := DAO.GetTaskByModelName(task.ModelName)
 	if err == nil && model != nil {
 		// 任务已存在，返回任务信息
+		tmp, have := TaskMap.Load(model.ID)
+		if have {
+			task = tmp.(*ModelDownloadTask)
+			task.UpdateDownloadProcess()
+			c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "task already exists", Data: task})
+			return
+		}
 		c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "task already exists", Data: model})
 		return
 	}
@@ -65,6 +114,7 @@ func GinTaskCommit(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
 		return
 	}
+	// 预留10G的额外空间
 	if alive < (task.ModelSize + 10*1<<30) {
 		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: "not enough disk space", Data: nil})
 		return
@@ -81,7 +131,7 @@ func GinTaskCommit(c *gin.Context) {
 	TaskMap.Store(task.ID, task)
 
 	// 开始下载模型
-	task, err = DownloadModel(task)
+	err = task.StartDownload()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
 		return
@@ -96,6 +146,9 @@ func GinTaskQuery(c *gin.Context) {
 		result = append(result, value.(*ModelDownloadTask))
 		return true
 	})
+	for _, v := range result {
+		v.UpdateDownloadProcess()
+	}
 	c.JSON(http.StatusOK, ApiResult[[]*ModelDownloadTask]{Code: 200, Msg: "ok", Data: result})
 }
 
