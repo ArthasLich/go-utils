@@ -5,7 +5,7 @@ import (
 )
 
 func TestQueryTask(t *testing.T) {
-	err := Init("test.db", "/tmp", "", 0)
+	err := Init("test.db", "/tmp", 0)
 	if err != nil {
 		t.Error(err)
 		return
@@ -22,7 +22,7 @@ func TestQueryTask(t *testing.T) {
 }
 
 func TestSaveOrUpdateTask(t *testing.T) {
-	err := Init("test.db", "/tmp", "", 0)
+	err := Init("test.db", "/tmp", 0)
 	if err != nil {
 		t.Error(err)
 		return
@@ -43,7 +43,7 @@ func TestSaveOrUpdateTask(t *testing.T) {
 }
 
 func TestDeleteTask(t *testing.T) {
-	err := Init("test.db", "/tmp", "", 0)
+	err := Init("test.db", "/tmp", 0)
 	if err != nil {
 		t.Error(err)
 		return
@@ -59,7 +59,7 @@ func TestDeleteTask(t *testing.T) {
 }
 
 func TestGetTaskByID(t *testing.T) {
-	err := Init("test.db", "/tmp", "", 0)
+	err := Init("test.db", "/tmp", 0)
 	if err != nil {
 		t.Error(err)
 		return
@@ -71,8 +71,7 @@ func TestGetTaskByID(t *testing.T) {
 }
 
 func TestGetModelSize(t *testing.T) {
-	PythonCmd = "python3.12"
-	model := "Tencent-Hunyuan/Hy3"
+	model := "MiniMax/MiniMax-H4"
 	size, err := QueryModelSize(model)
 	if err != nil {
 		t.Error(err)
@@ -82,9 +81,8 @@ func TestGetModelSize(t *testing.T) {
 }
 
 func TestQueryModel(t *testing.T) {
-	PythonCmd = "python3.12"
 	model := "deepseek-r1"
-	Init("test.db", "/tmp", "", 0)
+	Init("test.db", "/tmp", 0)
 	m, err := DAO.GetTaskByModelName(model)
 	if err != nil {
 		t.Error(err)

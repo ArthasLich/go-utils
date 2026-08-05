@@ -1,15 +1,16 @@
 package logic
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/go-resty/resty/v2"
 )
 
-
 func TestNewTask(t *testing.T) {
-	PythonCmd = "python3.12"
 	task, err := NewTask("microsoft/Mage-Flow", "test", "test")
 	if err != nil {
 		t.Error(err)
@@ -35,4 +36,25 @@ func TestKillTask(t *testing.T) {
 	time.Sleep(time.Second * 10)
 	cmd.Process.Kill()
 	t.Log("command killed")
+}
+
+func TestGetModelSizeByAPI(t *testing.T) {
+	var result struct {
+		Code int `json:"Code"`
+		Data struct {
+			StorageSize uint64 `json:"StorageSize"`
+		} `json:"Data"`
+		Message   string `json:"Message"`
+		RequestId string `json:"RequestId"`
+		Success   bool   `json:"Success"`
+	}
+	cli := resty.New().SetTimeout(time.Second).SetAuthToken(fmt.Sprintf("Bearer %s", MSToken))
+	_, err := cli.R().SetResult(&result).ExpectContentType("application/json").Get("https://modelscope.cn/api/v1/models/moonshotai/Kimi-K3")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	s := result.Data.StorageSize
+	t.Log(s)
+	t.Log(s / 1024 / 1024 / 1024)
 }

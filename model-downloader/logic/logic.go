@@ -2,60 +2,30 @@ package logic
 
 import (
 	"fmt"
-	"os/exec"
-	"strconv"
-	"strings"
+	"net/http"
 )
+
+type innerData struct {
+	StorageSize uint64 `json:"StorageSize"`
+}
+
+type QuerySuccessResult struct {
+	Code      int        `json:"Code"`
+	Data      *innerData `json:"Data,omitempty"`
+	Message   string     `json:"Message"`
+	RequestId string     `json:"RequestId"`
+	Success   bool       `json:"Success"`
+}
 
 // QueryModelSize 查询模型大小，单位是字节
 func QueryModelSize(model string) (uint64, error) {
-	output, err := exec.Command(PythonCmd, "-c", strings.ReplaceAll(QueryCmd, "MODEL_NAME", model)).Output()
+	result := QuerySuccessResult{}
+	_, err := HTTPClient.R().SetPathParam("model", model).SetResult(&result).SetError(&result).Get("https://modelscope.cn/api/v1/models/{model}")
 	if err != nil {
-		return 0, fmt.Errorf("error: run shell command `%s` failed: %v", fmt.Sprintf("%s -c %s", PythonCmd, strings.ReplaceAll(QueryCmd, "MODEL_NAME", model)), err)
+		return 0, err
 	}
-	size := strings.Trim(string(output), "\n")
-	usize, err := strconv.ParseUint(size, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("error: parse uint64 failed: %v", err)
+	if result.Code == http.StatusOK && result.Success {
+		return result.Data.StorageSize, nil
 	}
-	return usize, nil
+	return 0, fmt.Errorf("error: get model size failed: %s", result.Message)
 }
-
-// DownloadModel 下载模型
-// func DownloadModel(task *ModelDownloadTask) (*ModelDownloadTask, error) {
-// 	// modelscope download --model Tencent-Hunyuan/Hy3 --local_dir
-// 	err := os.MkdirAll(task.SavePath, 0644)
-// 	if err != nil {
-// 		return task, fmt.Errorf("error: create directory failed: %v", err)
-// 	}
-// 	cmdStr, err := task.DownLoadCmd()
-// 	if err != nil {
-// 		return task, fmt.Errorf("error: generate download command failed: %v", err)
-// 	}
-// 	cmd := exec.Command("bash", "-c", cmdStr)
-// 	err = cmd.Start()
-// 	if err != nil {
-// 		return task, fmt.Errorf("error: start command failed: %v", err)
-// 	}
-// 	pid := cmd.Process.Pid
-// 	task.DownloadPid = &pid
-// 	task.Status = TaskStatusDownloading
-// 	task.DownloadProcess = cmd.Process
-
-// 	go func(cmd *exec.Cmd, task *ModelDownloadTask) {
-// 		err := cmd.Wait()
-// 		if err != nil {
-// 			select {
-// 			case <-task.skipAutoChangeStatus:
-
-// 			default:
-// 				task.Status = TaskStatusFailed
-// 			}
-// 		} else {
-// 			task.Status = TaskStatusCompleted
-// 		}
-// 		task.DownloadPid = nil
-// 	}(cmd, task)
-
-// 	return task, nil
-// }

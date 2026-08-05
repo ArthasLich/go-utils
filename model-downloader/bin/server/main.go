@@ -12,7 +12,6 @@ var (
 	flagDB       = pflag.StringP("database", "d", "models.db", "Database file")
 	flagSavePath = pflag.StringP("save-path", "s", "", "dir to save model files")
 	flagHelp     = pflag.BoolP("help", "h", false, "show help")
-	flagPython   = pflag.String("python", "python3.10", "set python cmd path whilch used to query model size")
 	flagPort     = pflag.Uint16P("port", "p", 9986, "set listen port")
 )
 
@@ -35,7 +34,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("evaluate symlinks of save path failed: %v", err)
 	}
-	
-	logic.Init(*flagDB, savePath, *flagPython, *flagPort)
+
+	logic.Init(*flagDB, savePath, *flagPort)
 	logic.Run()
 }

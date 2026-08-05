@@ -18,6 +18,10 @@ import (
 
 type dao struct{}
 
+/*
+	内存里仅存放状态为creating、downloading、failed和stopped的下载任务
+*/
+
 type TaskStatus string
 
 const (
@@ -39,19 +43,19 @@ type Model struct {
 // ModelDownloadTask 下载任务
 type ModelDownloadTask struct {
 	Model                               // 基础字段
-	ModelName        string             `json:"model_name"`                 // 模型名称
-	User             string             `json:"user"`                       // 下载用户
-	SavePath         string             `json:"save_path"`                  // 模型下载路径
-	Status           TaskStatus         `json:"status"`                     // 状态
-	ModelSize        uint64             `json:"model_size"`                 // 模型大小
-	DefaultPath      bool               `json:"default_path"`               // 是否使用了默认路径
-	DownloadedSize   *uint64            `gorm:"-" json:"downloaded_size"`   // 已下载的大小
-	DownloadPid      *int               `gorm:"-" json:"download_pid"`      // 下载进程的pid
-	DownloadProgress *float64           `gorm:"-" json:"download_progress"` // 下载进度，百分比
-	DownloadProcess  *os.Process        `gorm:"-" json:"-"`                 // 下载进程
-	ctx              context.Context    `gorm:"-" json:"-"`                 // 上下文，控制任务停止
-	cancel           context.CancelFunc `gorm:"-" json:"-"`                 // 取消方法，控制任务停止
-	ctxUsed          bool               `gorm:"-" json:"-"`                 // 上下文是否被使用
+	ModelName        string             `json:"model_name"`                                 // 模型名称
+	User             string             `json:"user"`                                       // 下载用户
+	SavePath         string             `json:"save_path"`                                  // 模型下载路径
+	Status           TaskStatus         `json:"status"`                                     // 状态
+	ModelSize        uint64             `json:"model_size"`                                 // 模型大小
+	DefaultPath      bool               `json:"default_path"`                               // 是否使用了默认路径
+	DownloadedSize   uint64             `gorm:"download_size" json:"downloaded_size"`       // 已下载的大小
+	DownloadProgress float64            `gorm:"download_progress" json:"download_progress"` // 下载进度，百分比
+	DownloadPid      *int               `gorm:"-" json:"download_pid"`                      // 下载进程的pid
+	DownloadProcess  *os.Process        `gorm:"-" json:"-"`                                 // 下载进程
+	ctx              context.Context    `gorm:"-" json:"-"`                                 // 上下文，控制任务停止
+	cancel           context.CancelFunc `gorm:"-" json:"-"`                                 // 取消方法，控制任务停止
+	ctxUsed          bool               `gorm:"-" json:"-"`                                 // 上下文是否被使用
 }
 
 // NewTask 创建下载任务，如果查询模型大小失败则返回错误，如果savePath为空则使用默认路径
@@ -81,23 +85,14 @@ func NewTask(modelName string, user string, savePath string) (*ModelDownloadTask
 	return &result, nil
 }
 
-// DownLoadCmd 生成下载命令
-func (mdt *ModelDownloadTask) DownLoadCmd() (string, error) {
-	output, outerr, err := mdt.LogFile()
+// LogFile 模型下载输出文件和错误文件
+func (mdt *ModelDownloadTask) LogFile() (string, error) {
+	err := os.MkdirAll(OutputDir, 0755)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s download --model %s --local_dir %s 2>>%s >>%s", ModelDownCmd, mdt.ModelName, mdt.SavePath, outerr, output), nil
-}
-
-// LogFile 模型下载输出文件和错误文件
-func (mdt *ModelDownloadTask) LogFile() (string, string, error) {
-	err := os.MkdirAll(OutputDir, 0755)
-	if err != nil {
-		return "", "", err
-	}
 	shortName := mdt.ModelShortName()
-	return fmt.Sprintf("%s/%s.out", OutputDir, shortName), fmt.Sprintf("%s/%s.err", OutputDir, shortName), nil
+	return fmt.Sprintf("%s/%s.out", OutputDir, shortName), nil
 }
 
 // StartDownload 启动下载任务
@@ -110,13 +105,20 @@ func (mdt *ModelDownloadTask) StartDownload() error {
 	if err != nil {
 		return fmt.Errorf("error: create directory failed: %v", err)
 	}
-	cmdStr, err := mdt.DownLoadCmd()
+	out, err := mdt.LogFile()
 	if err != nil {
-		return fmt.Errorf("error: generate download command failed: %v", err)
+		return fmt.Errorf("error: get download log file path failed: %v", err)
 	}
-	cmd := exec.Command("bash", "-c", cmdStr)
+	logfile, err := os.OpenFile(out, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("error: open or create log file failed: %v", err)
+	}
+	cmd := exec.Command(ModelDownCmd, "download", "--model", mdt.ModelName, "--local_dir", mdt.SavePath)
+	cmd.Stdout = logfile
+	cmd.Stderr = logfile
 	err = cmd.Start()
 	if err != nil {
+		logfile.Close()
 		return fmt.Errorf("error: start command failed: %v", err)
 	}
 	pid := cmd.Process.Pid
@@ -129,9 +131,8 @@ func (mdt *ModelDownloadTask) StartDownload() error {
 		mdt.cancel = cancel
 		mdt.ctxUsed = false
 	}
-	go func(cmd *exec.Cmd, task *ModelDownloadTask) {
+	go func(cmd *exec.Cmd, task *ModelDownloadTask, f *os.File) {
 		ch := make(chan error)
-		defer close(ch)
 		skip := false
 		go func() {
 			err := cmd.Wait()
@@ -151,8 +152,15 @@ func (mdt *ModelDownloadTask) StartDownload() error {
 			}
 			task.DownloadPid = nil
 			task.DownloadProcess = nil
+			task.cancel()
+			task.cancel = nil
+			task.ctx = nil
+			task.ctxUsed = true
+			BackgroundEvent <- task // 通知背景任务自动落库
 		}
-	}(cmd, mdt)
+		close(ch)
+		f.Close()
+	}(cmd, mdt, logfile)
 	return nil
 }
 
@@ -185,7 +193,13 @@ func (mdt *ModelDownloadTask) StopDownload() error {
 
 // CheckDiskSize 检查磁盘空间是否满足需求
 func (mdt *ModelDownloadTask) CheckDiskSize() (bool, error) {
-	path, err := filepath.EvalSymlinks(mdt.SavePath)
+	var path string
+	var err error
+	if mdt.DefaultPath {
+		path, err = filepath.EvalSymlinks(SavePath)
+	} else {
+		path, err = filepath.EvalSymlinks(mdt.SavePath)
+	}
 	if err != nil {
 		return false, err
 	}
@@ -193,10 +207,7 @@ func (mdt *ModelDownloadTask) CheckDiskSize() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if avail < mdt.ModelSize {
-		return false, nil
-	}
-	return true, nil
+	return avail > (mdt.ModelSize + (1<<30)*10), nil
 }
 
 func (mdt *ModelDownloadTask) ModelShortName() string {
@@ -221,9 +232,9 @@ func (mdt *ModelDownloadTask) UpdateDownloadProcess() error {
 	if err != nil {
 		return err
 	}
-	mdt.DownloadedSize = &size
+	mdt.DownloadedSize = size
 	percent := (float64(size) / float64(mdt.ModelSize) * 100)
-	mdt.DownloadProgress = &percent
+	mdt.DownloadProgress = percent
 	return nil
 }
 
@@ -280,13 +291,36 @@ func (d *dao) GetTaskByID(id uint) *ModelDownloadTask {
 }
 
 func (d *dao) GetTaskByModelName(modelName string) (*ModelDownloadTask, error) {
-	var task ModelDownloadTask
-	tx := GlobalDB.Unscoped().Where("model_name = ?", modelName).First(&task)
-	if tx.Error != nil {
-		return nil, tx.Error
-	}
-	if task.ID == 0 {
+	task, err := gorm.G[ModelDownloadTask](GlobalDB).Where("model_name = ?", modelName).First(context.Background())
+	return &task, err
+}
+
+// UpdateTaskBatch 批量更新
+func (d *dao) UpdateTaskBatch(tasks []*ModelDownloadTask) ([]*ModelDownloadTask, error) {
+	if len(tasks) == 0 {
 		return nil, nil
 	}
-	return &task, nil
+	err := GlobalDB.Transaction(func(tx *gorm.DB) error {
+		for _, v := range tasks {
+			m := ModelDownloadTask{
+				Model: Model{
+					ID: v.ID,
+				},
+			}
+			err := tx.Model(&m).Updates(v).Error
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return tasks, err
+}
+
+// ListTaskByStatus 列出指定状态的任务
+func (d *dao) ListTaskByStatus(status []TaskStatus) ([]ModelDownloadTask, error) {
+	if len(status) == 0 {
+		return nil, nil
+	}
+	return gorm.G[ModelDownloadTask](GlobalDB).Where("status IN ?", status).Find(context.Background())
 }
