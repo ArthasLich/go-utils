@@ -238,31 +238,31 @@ func (mdt *ModelDownloadTask) UpdateDownloadProcess() error {
 	return nil
 }
 
-func (d *dao) QueryTask(user *string, status *TaskStatus, model *string) ([]ModelDownloadTask, error) {
-	db := gorm.G[ModelDownloadTask](GlobalDB)
-	var chain gorm.ChainInterface[ModelDownloadTask]
-	if user != nil {
-		chain = db.Where("user = ?", *user)
-	}
-	if status != nil {
-		if chain != nil {
-			chain = chain.Where("status = ?", *status)
-		} else {
-			chain = db.Where("status = ?", *status)
-		}
-	}
-	if model != nil {
-		if chain != nil {
-			chain = chain.Where("model_name = ?", *model)
-		} else {
-			chain = db.Where("model_name = ?", *model)
-		}
-	}
-	if chain != nil {
-		return chain.Order("created_at desc").Find(context.Background())
-	}
-	return db.Order("created_at desc").Find(context.Background())
-}
+// func (d *dao) QueryTask(user *string, status *TaskStatus, model *string) ([]ModelDownloadTask, error) {
+// 	db := gorm.G[ModelDownloadTask](GlobalDB)
+// 	var chain gorm.ChainInterface[ModelDownloadTask]
+// 	if user != nil {
+// 		chain = db.Where("user = ?", *user)
+// 	}
+// 	if status != nil {
+// 		if chain != nil {
+// 			chain = chain.Where("status = ?", *status)
+// 		} else {
+// 			chain = db.Where("status = ?", *status)
+// 		}
+// 	}
+// 	if model != nil {
+// 		if chain != nil {
+// 			chain = chain.Where("model_name = ?", *model)
+// 		} else {
+// 			chain = db.Where("model_name = ?", *model)
+// 		}
+// 	}
+// 	if chain != nil {
+// 		return chain.Order("created_at desc").Find(context.Background())
+// 	}
+// 	return db.Order("created_at desc").Find(context.Background())
+// }
 
 func (d *dao) SaveOrUpdateTask(task *ModelDownloadTask) (*ModelDownloadTask, error) {
 	if task == nil {
@@ -323,4 +323,16 @@ func (d *dao) ListTaskByStatus(status []TaskStatus) ([]ModelDownloadTask, error)
 		return nil, nil
 	}
 	return gorm.G[ModelDownloadTask](GlobalDB).Where("status IN ?", status).Find(context.Background())
+}
+
+func (d *dao) QueryTasks(status []TaskStatus, after time.Time, user string) ([]ModelDownloadTask, error) {
+	db := gorm.G[ModelDownloadTask](GlobalDB)
+	var chain gorm.ChainInterface[ModelDownloadTask] = db.Where("updated_at > ?", after)
+	if len(status) != 0 {
+		chain = chain.Where("status IN ?", status)
+	}
+	if len(user) != 0 {
+		chain = chain.Where("user = ?", user)
+	}
+	return chain.Find(context.Background())
 }

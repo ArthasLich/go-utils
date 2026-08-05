@@ -15,7 +15,7 @@ func TestNewTask(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	t.Log(task)
+	t.Logf("%+v", task)
 }
 
 func TestKillTask(t *testing.T) {
@@ -57,4 +57,15 @@ func TestGetModelSizeByAPI(t *testing.T) {
 	s := result.Data.StorageSize
 	t.Log(s)
 	t.Log(s / 1024 / 1024 / 1024)
+}
+
+func TestEasyTime(t *testing.T) {
+	es := EasyTime{
+		Time: time.Now(),
+	}
+	b, _ := es.MarshalJSON()
+	t.Log(string(b))
+	var ess EasyTime
+	ess.UnmarshalJSON(b)
+	t.Log(ess)
 }

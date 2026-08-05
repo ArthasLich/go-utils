@@ -271,11 +271,30 @@ func GinTaskCommit(c *gin.Context) {
 
 // GinTaskQuery 查询下载任务
 func GinTaskQuery(c *gin.Context) {
-	result := make([]*ModelDownloadTask, 0)
+	var query struct {
+		User   string       `json:"user"`             // 用户，为空表示所有用户
+		After  EasyTime     `json:"after"`            // 查询截止时间，在此之前的不考虑
+		Status []TaskStatus `json:"status,omitempty"` // 任务状态，为空表示所有状态
+	}
+	if err := c.ShouldBindJSON(&query); err != nil {
+		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: parse body failed: %v", err), Data: nil})
+		return
+	}
+	result := make([]*ModelDownloadTask, 0, 64)
+	tasks, err := DAO.QueryTasks(query.Status, query.After.Time, query.User)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: query database failed: %v", err), Data: nil})
+		return
+	}
 	rl := TaskMapLock.RLocker()
 	rl.Lock()
-	for _, v := range TaskMap {
-		result = append(result, v)
+	for _, v := range tasks {
+		task, have := TaskMap[v.ID]
+		if have {
+			result = append(result, task)
+		} else {
+			result = append(result, &v)
+		}
 	}
 	rl.Unlock()
 	for _, v := range result {

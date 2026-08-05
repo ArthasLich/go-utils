@@ -1,11 +1,12 @@
 package logic
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-resty/resty/v2"
 	"gorm.io/gorm"
 )
 
@@ -18,8 +19,7 @@ var (
 	ListenPort      uint16                      = 0                                  // 监听端口
 	BackgroundEvent chan *ModelDownloadTask     = make(chan *ModelDownloadTask, 256) // 背景事件
 
-	MSToken    = "ms-7cabf546-64dc-42cc-829d-d930a8b74ce1" // 魔塔社区API-token
-	HTTPClient = resty.New().SetTimeout(time.Second).SetAuthToken(fmt.Sprintf("Bearer %s", MSToken))
+	MSToken = "ms-7cabf546-64dc-42cc-829d-d930a8b74ce1" // 魔塔社区API-token
 )
 
 /*
@@ -34,5 +34,25 @@ const (
 	OutputDir = "/tmp/model-downloader"
 
 	// 魔塔社区token ms-7cabf546-64dc-42cc-829d-d930a8b74ce1
-
 )
+
+// 自定义的简单时间
+type EasyTime struct {
+	time.Time
+}
+
+func (et EasyTime) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf(`"%s"`, et.Time.Format(time.DateTime))), nil
+}
+
+func (et *EasyTime) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return errors.New("input is empty")
+	}
+	t, err := time.Parse(time.DateTime, strings.Trim(string(b), `"`))
+	if err != nil {
+		return err
+	}
+	et.Time = t
+	return nil
+}

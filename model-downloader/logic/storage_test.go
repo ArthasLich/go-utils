@@ -2,24 +2,25 @@ package logic
 
 import (
 	"testing"
+	"time"
 )
 
-func TestQueryTask(t *testing.T) {
-	err := Init("test.db", "/tmp", 0)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	user := "liming6"
-	task, err := DAO.QueryTask(&user, nil, nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	for _, v := range task {
-		t.Logf("%+v", v)
-	}
-}
+// func TestQueryTask(t *testing.T) {
+// 	err := Init("test.db", "/tmp", 0)
+// 	if err != nil {
+// 		t.Error(err)
+// 		return
+// 	}
+// 	user := "liming6"
+// 	task, err := DAO.QueryTask(&user, nil, nil)
+// 	if err != nil {
+// 		t.Error(err)
+// 		return
+// 	}
+// 	for _, v := range task {
+// 		t.Logf("%+v", v)
+// 	}
+// }
 
 func TestSaveOrUpdateTask(t *testing.T) {
 	err := Init("test.db", "/tmp", 0)
@@ -89,4 +90,16 @@ func TestQueryModel(t *testing.T) {
 		return
 	}
 	t.Log(m)
+}
+
+func TestQueryTasks(t *testing.T) {
+	Init("models.db", "/tmp", 0)
+	tasks, err := DAO.QueryTasks([]TaskStatus{TaskStatusCanceled, TaskStatusStopped}, time.Now(), "")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for _, v := range tasks {
+		t.Logf("%+v", v)
+	}
 }
