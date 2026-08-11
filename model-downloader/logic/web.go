@@ -36,7 +36,7 @@ func GinTaskStop(c *gin.Context) {
 	task, have := TaskMap[query.TaskID]
 	rl.Unlock()
 	if !have {
-		c.JSON(http.StatusOK, ApiResult[any]{Code: 200, Msg: "task not found", Data: nil})
+		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: "task not found", Data: nil})
 		return
 	}
 	// 检查状态是否为正在下载
@@ -86,7 +86,7 @@ func GinTaskStart(c *gin.Context) {
 	task, have := TaskMap[query.TaskID]
 	rl.Unlock()
 	if !have {
-		c.JSON(http.StatusOK, ApiResult[any]{Code: 200, Msg: "task not found", Data: nil})
+		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: "task not found", Data: nil})
 		return
 	}
 	if task.User != query.User && query.User != "root" {
@@ -138,7 +138,7 @@ func GinTaskStart(c *gin.Context) {
 	TaskMap[task.ID] = task
 	TaskMapLock.Unlock()
 
-	c.JSON(http.StatusAccepted, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "ok", Data: task})
+	c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "ok", Data: task})
 }
 
 // GinTaskCancel 取消下载任务
@@ -156,7 +156,7 @@ func GinTaskCancel(c *gin.Context) {
 	task, have := TaskMap[query.TaskID]
 	rl.Unlock()
 	if !have {
-		c.JSON(http.StatusOK, ApiResult[any]{Code: 200, Msg: "task not found", Data: nil})
+		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: "task not found", Data: nil})
 		return
 	}
 	if task.User != query.User && query.User != "root" {
@@ -221,10 +221,10 @@ func GinTaskCommit(c *gin.Context) {
 		rl.Unlock()
 		if have && task != nil {
 			task.UpdateDownloadProcess()
-			c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "task already exists", Data: task})
+			c.JSON(http.StatusBadRequest, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: task})
 			return
 		}
-		c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "task already exists", Data: model})
+		c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: model})
 		return
 	}
 

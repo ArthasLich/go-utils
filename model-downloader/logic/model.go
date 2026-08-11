@@ -33,6 +33,25 @@ const (
 	TaskStatusStopped     TaskStatus = "stopped"     // 停止
 )
 
+func TaskStatusFromStr(str string) (TaskStatus, error) {
+	switch str {
+	case "creating":
+		return TaskStatusCreating, nil
+	case "downloading":
+		return TaskStatusDownloading, nil
+	case "completed":
+		return TaskStatusCompleted, nil
+	case "failed":
+		return TaskStatusFailed, nil
+	case "canceled":
+		return TaskStatusCanceled, nil
+	case "stopped":
+		return TaskStatusStopped, nil
+	default:
+		return TaskStatusCreating, errors.New("unknown taskstatus")
+	}
+}
+
 type Model struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
