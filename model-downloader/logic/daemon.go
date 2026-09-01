@@ -32,9 +32,19 @@ func Daemon(ctx context.Context) {
 				log.Printf("error: background update task failed: %v", err)
 			}
 			// 如果是下载完成，则删除日志
-			if task.Status == TaskStatusCompleted {
+			switch task.Status {
+			case TaskStatusCompleted:
 				outf, _ := task.LogFile()
 				os.Remove(outf)
+			case TaskStatusFailed:
+				fail, have := FailedInfoMap[task.ID]
+				if have {
+					fail.Failed()
+				} else {
+					fail = NewFailedInfo(task)
+					fail.Failed()
+					FailedInfoMap[task.ID] = fail
+				}
 			}
 		case <-ticker.C:
 			background()
@@ -54,12 +64,16 @@ func background() {
 	defaultPathTask := make([]*ModelDownloadTask, 0, 32)
 
 	taskToDelFromMem := make([]*ModelDownloadTask, 0, 32)
+	taskToRestart := make([]*ModelDownloadTask, 0, 32)
 	rl := TaskMapLock.RLocker()
 	rl.Lock()
 	for _, task := range TaskMap {
 		switch task.Status {
-		case TaskStatusCreating, TaskStatusFailed, TaskStatusStopped:
+		case TaskStatusCreating, TaskStatusStopped:
 			// 不执行动作
+		case TaskStatusFailed:
+			// 尝试自动开始下载
+			taskToRestart = append(taskToRestart, task)
 		case TaskStatusDownloading:
 			// 记录下载路径
 			if task.Status == TaskStatusDownloading {
@@ -117,6 +131,32 @@ func background() {
 			v.StopDownload()
 		}
 	}
+
+	FailedInfoMapLock.Lock()
+	for _, v := range taskToRestart {
+		fail, have := FailedInfoMap[v.ID]
+		if !have {
+			continue
+		}
+		if fail.Check() {
+			go fail.Start()
+		}
+	}
+	todel := make([]uint, 0, 8)
+	for k, v := range FailedInfoMap {
+		lf := v.LastFail()
+		if lf == nil {
+			continue
+		}
+		if time.Since(*lf).Minutes() > 30.0 {
+			todel = append(todel, k)
+		}
+	}
+	for _, v := range todel {
+		delete(FailedInfoMap, v)
+	}
+	FailedInfoMapLock.Unlock()
+
 	// 落库
 	_, err = DAO.UpdateTaskBatch(taskToUpdate)
 	if err != nil {

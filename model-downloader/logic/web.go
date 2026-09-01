@@ -2,8 +2,10 @@ package logic
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -113,6 +115,10 @@ func GinTaskStart(c *gin.Context) {
 	task.ctx = nil
 	task.DownloadProcess = nil
 
+	_, have = FailedInfoMap[task.ID]
+	if have {
+		delete(FailedInfoMap, task.ID)
+	}
 	// 开始下载
 	err = task.StartDownload()
 	if err != nil {
@@ -198,21 +204,24 @@ func GinTaskCancel(c *gin.Context) {
 
 // GinTaskCommit 提交下载任务
 func GinTaskCommit(c *gin.Context) {
+	start := time.Now()
 	var query struct {
 		ModelName string `json:"model_name"`          // 模型名称，
 		User      string `json:"user"`                // 用户名，
 		SavePath  string `json:"save_path,omitempty"` // 保存路径，如果为空，就使用默认路径
 	}
 	if err := c.ShouldBindJSON(&query); err != nil {
-		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: parse body failed: %v", err), Data: nil})
+		c.AbortWithStatusJSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: parse body failed: %v", err), Data: nil})
 		return
 	}
 	task, err := NewTask(query.ModelName, query.User, query.SavePath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
 		return
 	}
+	log.Printf("get model size used time: %dms\n", time.Since(start).Milliseconds())
 	model, err := DAO.GetTaskByModelName(task.ModelName)
+	log.Printf("get db info time: %dms\n", time.Since(start).Milliseconds())
 	if err == nil && model != nil {
 		// 任务已存在，返回任务信息
 		rl := TaskMapLock.RLocker()
@@ -221,71 +230,77 @@ func GinTaskCommit(c *gin.Context) {
 		rl.Unlock()
 		if have && task != nil {
 			task.UpdateDownloadProcess()
-			c.JSON(http.StatusBadRequest, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: task})
+			c.AbortWithStatusJSON(http.StatusBadRequest, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: task})
 			return
 		}
-		c.JSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: model})
+		c.AbortWithStatusJSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: model})
 		return
 	}
 
 	// 检查磁盘空间是否满足
 	enough, err := task.CheckDiskSize()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
 		return
 	}
 	// 预留10G的额外空间
 	if !enough {
-		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: "not enough disk space", Data: nil})
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: "not enough disk space", Data: nil})
 		return
 	}
 
 	// 开始下载模型
 	err = task.StartDownload()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
 		return
 	}
 
 	err = task.UpdateDownloadProcess()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
 		return
 	}
 
 	// 落库
 	tempTask, err := DAO.SaveOrUpdateTask(task)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+		c.AbortWithStatusJSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
 		return
 	}
 	task = tempTask
-
+	log.Printf("update db info time: %dms\n", time.Since(start).Milliseconds())
 	// 内存里也保存一份
 	TaskMapLock.Lock()
 	TaskMap[task.ID] = task
 	TaskMapLock.Unlock()
-
+	log.Printf("update map info time: %dms\n", time.Since(start).Milliseconds())
 	c.JSON(http.StatusAccepted, ApiResult[*ModelDownloadTask]{Code: 200, Msg: "ok", Data: task})
 }
 
 // GinTaskQuery 查询下载任务
 func GinTaskQuery(c *gin.Context) {
+	start := time.Now()
 	var query struct {
 		User   string       `json:"user"`             // 用户，为空表示所有用户
 		After  EasyTime     `json:"after"`            // 查询截止时间，在此之前的不考虑
 		Status []TaskStatus `json:"status,omitempty"` // 任务状态，为空表示所有状态
 	}
 	if err := c.ShouldBindJSON(&query); err != nil {
-		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: parse body failed: %v", err), Data: nil})
+		c.AbortWithStatusJSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: parse body failed: %v", err), Data: nil})
 		return
 	}
 	result := make([]*ModelDownloadTask, 0, 64)
+	// 如果是root，查询所有用户的下载任务
+	if query.User == "all" {
+		query.User = "root"
+	}
 	tasks, err := DAO.QueryTasks(query.Status, query.After.Time, query.User)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: query database failed: %v", err), Data: nil})
+		c.AbortWithStatusJSON(http.StatusBadRequest, ApiResult[any]{Code: 400, Msg: fmt.Sprintf("error: query database failed: %v", err), Data: nil})
 		return
 	}
+	log.Printf("get db info use time: %dms \n", time.Since(start).Milliseconds())
 	rl := TaskMapLock.RLocker()
 	rl.Lock()
 	for _, v := range tasks {
@@ -297,10 +312,7 @@ func GinTaskQuery(c *gin.Context) {
 		}
 	}
 	rl.Unlock()
-	for _, v := range result {
-		v.UpdateDownloadProcess()
-	}
-	c.JSON(http.StatusOK, ApiResult[[]*ModelDownloadTask]{Code: 200, Msg: "ok", Data: result})
+	c.AbortWithStatusJSON(http.StatusOK, ApiResult[[]*ModelDownloadTask]{Code: 200, Msg: "ok", Data: result})
 }
 
 // ApiResult API返回结果

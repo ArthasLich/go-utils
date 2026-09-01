@@ -134,7 +134,11 @@ func handlePullCmd(cmd *cobra.Command, args []string) error {
 		if !info.IsDir() {
 			return fmt.Errorf("%s is not a dir", p)
 		}
-		query.SavePath = p
+		fullPath, err := filepath.Abs(p)
+		if err != nil {
+			return fmt.Errorf("get absolute path of '%s' failed: %v", p, err)
+		}
+		query.SavePath = fullPath
 	} else {
 		query.SavePath = path
 	}

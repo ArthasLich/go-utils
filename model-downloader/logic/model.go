@@ -95,7 +95,7 @@ func NewTask(modelName string, user string, savePath string) (*ModelDownloadTask
 	}
 	result.ModelSize = size
 	if savePath == "" {
-		result.SavePath = filepath.Join(SavePath, result.ModelShortName())
+		result.SavePath = filepath.Join(SavePath, result.ModelName)
 		result.DefaultPath = true
 	} else {
 		// 获取保存路径的绝对路径
@@ -144,7 +144,7 @@ func (mdt *ModelDownloadTask) StartDownload() error {
 	mdt.DownloadPid = &pid
 	mdt.Status = TaskStatusDownloading
 	mdt.DownloadProcess = cmd.Process
-	if mdt.ctxUsed {
+	if mdt.ctxUsed || mdt.cancel == nil || mdt.ctx == nil {
 		ctx, cancel := context.WithCancel(context.Background())
 		mdt.ctx = ctx
 		mdt.cancel = cancel
@@ -179,6 +179,9 @@ func (mdt *ModelDownloadTask) StartDownload() error {
 		}
 		close(ch)
 		f.Close()
+		// 无论如何，都修改权限
+		exec.Command("chmod", "-R", "755", task.SavePath).Run()
+		exec.Command("chmod", "-R", "644", fmt.Sprintf("%s/*", task.SavePath)).Run()
 	}(cmd, mdt, logfile)
 	return nil
 }
@@ -256,32 +259,6 @@ func (mdt *ModelDownloadTask) UpdateDownloadProcess() error {
 	mdt.DownloadProgress = percent
 	return nil
 }
-
-// func (d *dao) QueryTask(user *string, status *TaskStatus, model *string) ([]ModelDownloadTask, error) {
-// 	db := gorm.G[ModelDownloadTask](GlobalDB)
-// 	var chain gorm.ChainInterface[ModelDownloadTask]
-// 	if user != nil {
-// 		chain = db.Where("user = ?", *user)
-// 	}
-// 	if status != nil {
-// 		if chain != nil {
-// 			chain = chain.Where("status = ?", *status)
-// 		} else {
-// 			chain = db.Where("status = ?", *status)
-// 		}
-// 	}
-// 	if model != nil {
-// 		if chain != nil {
-// 			chain = chain.Where("model_name = ?", *model)
-// 		} else {
-// 			chain = db.Where("model_name = ?", *model)
-// 		}
-// 	}
-// 	if chain != nil {
-// 		return chain.Order("created_at desc").Find(context.Background())
-// 	}
-// 	return db.Order("created_at desc").Find(context.Background())
-// }
 
 func (d *dao) SaveOrUpdateTask(task *ModelDownloadTask) (*ModelDownloadTask, error) {
 	if task == nil {
