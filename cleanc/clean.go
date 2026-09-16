@@ -29,6 +29,12 @@ var (
 
 	// 匹配参数cleanBefore
 	regArgBefore = regexp.MustCompile(`(?i)^(\d+)([dwmy])$`)
+
+	flagVersion = pflag.BoolP("version", "v", false, "show version")
+)
+
+const (
+	Version = "2026-09-16"
 )
 
 type TimeUnit int64
@@ -120,6 +126,12 @@ func main() {
 		pflag.Usage()
 		return
 	}
+
+	if *flagVersion {
+		fmt.Println(Version)
+		return
+	}
+
 	var before *DockerDuration = nil
 	if len(*containerBefore) != 0 {
 		tmp, err := parseBefore(*containerBefore)
@@ -188,12 +200,24 @@ func main() {
 			}
 			now := time.Now()
 			t := now.Add(ibefore.ToDuration() * -1)
+			cs, err := cli.ContainerList(context.Background(), client.ContainerListOptions{All: true})
+			if err != nil {
+				log.Fatalf("error: list docker container failed: %v", err)
+			}
+			usedImg := make(map[string]bool)
+			for _, v := range cs.Items {
+				usedImg[v.ImageID] = true
+			}
 			for _, v := range imgs.Items {
 				if v.Containers > 0 {
 					continue
 				}
+				used, have := usedImg[v.ID]
+				if have && used {
+					continue
+				}
 				if time.Unix(v.Created, 0).Before(t) {
-					_, err := cli.ImageRemove(context.Background(), v.ID, client.ImageRemoveOptions{Force: false})
+					_, err := cli.ImageRemove(context.Background(), v.ID, client.ImageRemoveOptions{Force: true, PruneChildren: true})
 					if err == nil {
 						if len(v.RepoTags) > 0 {
 							fmt.Printf("deleted %s %s \n", v.ID[7:19], v.RepoTags[0])

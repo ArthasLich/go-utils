@@ -86,7 +86,7 @@ func init() {
 	pullFS.StringP("path", "p", "", "model save path")
 
 	listFS := listCmd.Flags()
-	listFS.String("since", "3m", "set query task before this duration, format: <number>[d|w|m|y], d = day w = week m = month y = year")
+	listFS.String("since", "3d", "set query task before this duration, format: <number>[d|w|m|y], d = day w = week m = month y = year")
 	listFS.StringSliceP("status", "s", []string{string(logic.TaskStatusDownloading), string(logic.TaskStatusFailed), string(logic.TaskStatusStopped), string(logic.TaskStatusCompleted)}, "set query task status")
 	listFS.StringP("user", "u", "", "set query task of user, set all to query all user's download task")
 
@@ -143,8 +143,8 @@ func handlePullCmd(cmd *cobra.Command, args []string) error {
 		query.SavePath = path
 	}
 	var result logic.ApiResult[*logic.ModelDownloadTask]
-	cli := resty.New().SetTimeout(time.Second * 5)
-	resp, err := cli.R().SetBody(&query).SetResult(&result).SetError(&result).Post(fmt.Sprintf("%s/api/task/commit", ServerAddr))
+	cli := resty.New().SetTimeout(time.Second * 8).SetBaseURL(ServerAddr)
+	resp, err := cli.R().SetBody(&query).SetResult(&result).SetError(&result).Post("/api/task/commit")
 	if err != nil {
 		return fmt.Errorf("request failed: %v", err)
 	}
@@ -277,7 +277,7 @@ func handleListCmd(cmd *cobra.Command, args []string) error {
 	}
 	query.Status = status
 	var result logic.ApiResult[[]*logic.ModelDownloadTask]
-	cli := resty.New().SetTimeout(time.Second * 2)
+	cli := resty.New().SetTimeout(time.Second * 5)
 	resp, err := cli.R().SetBody(&query).SetResult(&result).SetError(&result).Post(fmt.Sprintf("%s/api/task/query", ServerAddr))
 	if err != nil {
 		return fmt.Errorf("request failed: %v", err)

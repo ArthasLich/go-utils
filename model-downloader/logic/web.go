@@ -291,9 +291,9 @@ func GinTaskQuery(c *gin.Context) {
 		return
 	}
 	result := make([]*ModelDownloadTask, 0, 64)
-	// 如果是root，查询所有用户的下载任务
-	if query.User == "all" {
-		query.User = "root"
+	// 如果是all或root，查询所有用户的下载任务
+	if query.User == "all" || query.User == "root" {
+		query.User = ""
 	}
 	tasks, err := DAO.QueryTasks(query.Status, query.After.Time, query.User)
 	if err != nil {

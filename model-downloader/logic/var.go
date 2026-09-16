@@ -139,7 +139,7 @@ type EasyTime struct {
 }
 
 func (et EasyTime) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf(`"%s"`, et.Time.Format(time.DateTime))), nil
+	return fmt.Appendf(nil, `"%s"`, et.Time.Format(time.DateTime)), nil
 }
 
 func (et *EasyTime) UnmarshalJSON(b []byte) error {

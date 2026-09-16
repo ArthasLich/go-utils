@@ -22,7 +22,7 @@ type QuerySuccessResult struct {
 
 // QueryModelSize 查询模型大小，单位是字节
 func QueryModelSize(model string) (uint64, error) {
-	client := resty.New().SetTimeout(time.Second * 2).SetAuthToken(fmt.Sprintf("Bearer %s", MSToken))
+	client := resty.New().SetTimeout(time.Second * 4).SetAuthToken(fmt.Sprintf("Bearer %s", MSToken))
 	result := QuerySuccessResult{}
 	_, err := client.R().SetPathParam("model", model).SetResult(&result).SetError(&result).Get("https://modelscope.cn/api/v1/models/{model}")
 	if err != nil {
