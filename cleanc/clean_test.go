@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,4 +173,11 @@ func TestPrintImages(t *testing.T) {
 		imgMap[v.ID] = &v
 	}
 	PrintImages(imgMap)
+}
+
+func TestParseStatus(t *testing.T) {
+	lines := strings.Split(testStr, "\n")
+	for _, line := range lines {
+		t.Log(parseStatus(line))
+	}
 }

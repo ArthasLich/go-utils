@@ -25,7 +25,7 @@ var (
 	dryRun    = pflag.BoolP("dry-run", "d", false, "just show which container will delete without --dry-run, not delete")
 
 	// 匹配docker容器状态的时间字符串
-	regDuration = regexp.MustCompile(`(?i)^.*[^0-9](\d+)\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?).*$`)
+	regDuration = regexp.MustCompile(`(?i)^.*[^0-9](\d+)\s+(second|minute|hour|day|week|month|year)s*.*$`)
 
 	// 匹配参数cleanBefore
 	regArgBefore = regexp.MustCompile(`(?i)^(\d+)([dwmy])$`)
@@ -34,7 +34,7 @@ var (
 )
 
 const (
-	Version = "2026-09-16"
+	Version = "2026-09-30"
 )
 
 type TimeUnit int64
@@ -243,7 +243,9 @@ func filterContainer(ci map[string]*ContainerInfo, before *DockerDuration, clean
 		}
 		switch v.Status {
 		case container.StateExited:
-			result[k] = v
+			if v.StatusTime.ToDuration() >= time.Hour*24*7 {
+				result[k] = v
+			}
 		case container.StateRunning:
 			if *cleanIdel && isIdleCmd(v.FirstCmd) && v.PidNumber == 1 {
 				result[k] = v
@@ -301,8 +303,7 @@ func GetContainerInfo(cli *client.Client) (map[string]*ContainerInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	listResult, err := cli.ContainerList(ctx, client.ContainerListOptions{
-		All:   true,
-		Limit: 9999,
+		All: true,
 	})
 	if err != nil {
 		return nil, err
