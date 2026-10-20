@@ -120,7 +120,7 @@ func (mdt *ModelDownloadTask) StartDownload() error {
 		return errors.New("task status is downloading")
 	}
 	// modelscope download --model Tencent-Hunyuan/Hy3 --local_dir
-	err := os.MkdirAll(mdt.SavePath, 0644)
+	err := os.MkdirAll(mdt.SavePath, 0755)
 	if err != nil {
 		return fmt.Errorf("error: create directory failed: %v", err)
 	}
