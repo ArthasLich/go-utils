@@ -223,18 +223,29 @@ func GinTaskCommit(c *gin.Context) {
 	model, err := DAO.GetTaskByModelName(task.ModelName)
 	log.Printf("get db info time: %dms\n", time.Since(start).Milliseconds())
 	if err == nil && model != nil {
-		// 任务已存在，返回任务信息
-		rl := TaskMapLock.RLocker()
-		rl.Lock()
-		task, have := TaskMap[model.ID]
-		rl.Unlock()
-		if have && task != nil {
-			task.UpdateDownloadProcess()
-			c.AbortWithStatusJSON(http.StatusBadRequest, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: task})
+		// 判断文件夹是否存在，如果已经存在，就退出
+		dirstat, err := os.Stat(model.SavePath)
+		if err == nil && dirstat.IsDir() {
+			// 任务已存在，返回任务信息
+			rl := TaskMapLock.RLocker()
+			rl.Lock()
+			task, have := TaskMap[model.ID]
+			rl.Unlock()
+			if have && task != nil {
+				task.UpdateDownloadProcess()
+				c.AbortWithStatusJSON(http.StatusBadRequest, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: task})
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: model})
 			return
+		} else {
+			// 文件夹不存在，删除数据库中的记录，继续下载流程
+			err = DAO.DeleteTask(model)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, ApiResult[any]{Code: 500, Msg: err.Error(), Data: nil})
+				return
+			}
 		}
-		c.AbortWithStatusJSON(http.StatusOK, ApiResult[*ModelDownloadTask]{Code: 400, Msg: "task already exists", Data: model})
-		return
 	}
 
 	// 检查磁盘空间是否满足
